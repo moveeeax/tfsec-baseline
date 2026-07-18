@@ -23,7 +23,7 @@ tfsec/checkov + custom rules; GitHub Actions.
 ## Usage
 
 ```hcl
-- uses: moveeeax/tfsec-baseline@v1
+- uses: cybercapybara/tfsec-baseline@v1
 ```
 
 ## License
