@@ -1,0 +1,51 @@
+name: "tfsec-baseline"
+description: "Opinionated tfsec/checkov IaC security baseline with an accountable suppression workflow and SARIF output."
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  directory:
+    description: "Directory to scan for Terraform."
+    required: false
+    default: "."
+  suppressions:
+    description: "Path to the accountable suppressions YAML (justification + owner + expiry)."
+    required: false
+    default: ".tfsec-baseline/suppressions.yaml"
+  sarif-file:
+    description: "Where to write the SARIF report."
+    required: false
+    default: "results.sarif"
+  soft-fail:
+    description: "If 'true', report findings but do not fail the job."
+    required: false
+    default: "false"
+  checkov-version:
+    description: "Pinned checkov version to install."
+    required: false
+    default: "3.3.12"
+
+outputs:
+  sarif-file:
+    description: "Path to the generated SARIF report."
+    value: ${{ inputs.sarif-file }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install scanners
+      shell: bash
+      run: python -m pip install --quiet "checkov==${{ inputs.checkov-version }}" pyyaml
+    - name: Run tfsec-baseline
+      shell: bash
+      env:
+        TARGET: ${{ inputs.directory }}
+        SUPPRESSIONS: ${{ inputs.suppressions }}
+        SARIF: ${{ inputs.sarif-file }}
+        SOFT_FAIL: ${{ inputs.soft-fail }}
+      run: "${{ github.action_path }}/scripts/scan.sh"

@@ -1,0 +1,24 @@
+# Central, accountable suppression file for the tfsec-baseline scanners.
+#
+# Every waiver here is validated by `suppression-audit`:
+#   - id:            a real scanner check id (e.g. CKV_AWS_18, aws-s3-enable-logging)
+#   - paths:         the file(s)/dir(s) the waiver applies to (at least one)
+#   - justification: >= 15 chars explaining the accepted risk (no "wip"/"n/a")
+#   - owner:         a team or person who owns this decision
+#   - expires:       an ISO date (YYYY-MM-DD); the audit FAILS once it passes
+#
+# Copy this file to `.tfsec-baseline/suppressions.yaml` in your repo and prune it.
+suppressions:
+  - id: CKV_AWS_18
+    paths:
+      - examples/good
+    justification: "S3 access logging is delivered centrally via the org CloudTrail data-events trail"
+    owner: platform-security
+    expires: "2027-01-31"
+
+  - id: CKV_AWS_144
+    paths:
+      - examples/good
+    justification: "cross-region replication is out of scope for this single-region internal bucket"
+    owner: platform-security
+    expires: "2027-01-31"

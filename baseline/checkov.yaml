@@ -1,0 +1,17 @@
+# tfsec-baseline — curated checkov configuration.
+#
+# Philosophy: a security gate is only useful if a clean module passes clean.
+# The checks skipped below are opinion-level noise on a well-formed module, not
+# security controls. Context-dependent checks (e.g. access logging) are NOT
+# skipped globally here — they are waived per-path, with an owner and an expiry,
+# through the accountable suppressions file (see suppression/ and
+# `suppression-audit --emit-checkov-skips`).
+framework:
+  - terraform
+compact: true
+download-external-modules: false
+skip-check:
+  - CKV2_AWS_61   # S3 lifecycle configuration — data retention is an app decision
+  - CKV2_AWS_62   # S3 event notifications — an integration feature, not a control
+  - CKV2_AWS_64   # KMS key policy defined — the default account key policy is acceptable
+  - CKV_AWS_144   # S3 cross-region replication — expensive; opt in per bucket, don't mandate

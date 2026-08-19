@@ -1,0 +1,16 @@
+suppressions:
+  # expired — the audit fails on this
+  - id: CKV_AWS_18
+    paths:
+      - examples/bad
+    justification: "we will fix logging next sprint, honest"
+    owner: someone
+    expires: "2024-01-01"
+
+  # no justification and no owner — the audit fails on this too
+  - id: CKV_AWS_21
+    paths:
+      - examples/bad
+    justification: "wip"
+    owner: ""
+    expires: "2027-01-01"

@@ -1,0 +1,11 @@
+metadata:
+  id: "CKV_TFSEC_2"
+  name: "Ensure aws_ebs_volume sets encrypted = true by default"
+  category: "ENCRYPTION"
+definition:
+  cond_type: "attribute"
+  resource_types:
+    - "aws_ebs_volume"
+  attribute: "encrypted"
+  operator: "equals"
+  value: true

@@ -1,0 +1,22 @@
+metadata:
+  id: "CKV_TFSEC_1"
+  name: "Ensure billable AWS resources carry mandatory Owner and Environment tags"
+  category: "GENERAL_SECURITY"
+definition:
+  and:
+    - cond_type: "attribute"
+      resource_types:
+        - "aws_s3_bucket"
+        - "aws_instance"
+        - "aws_db_instance"
+        - "aws_ebs_volume"
+      attribute: "tags.Owner"
+      operator: "exists"
+    - cond_type: "attribute"
+      resource_types:
+        - "aws_s3_bucket"
+        - "aws_instance"
+        - "aws_db_instance"
+        - "aws_ebs_volume"
+      attribute: "tags.Environment"
+      operator: "exists"

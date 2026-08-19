@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  unit:
+    # Self-hosted ARC runner: runs-on == the gha-runner-scale-set release name.
+    runs-on: tfsec-baseline
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq python3 python3-venv python3-pip
+      - name: Create venv
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --quiet pyyaml pytest
+      - name: Unit tests
+        run: |
+          . .venv/bin/activate
+          pytest -q
+
+  scan:
+    runs-on: tfsec-baseline
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq python3 python3-venv python3-pip
+      - name: Create venv
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install --quiet "checkov==3.3.12" pyyaml
+      - name: Scan clean sample (must pass clean)
+        run: |
+          . .venv/bin/activate
+          TARGET=examples/good \
+          SUPPRESSIONS=examples/suppressions.valid.yaml \
+          SARIF=good.sarif \
+          bash scripts/scan.sh
+      - name: Scan insecure sample (findings expected)
+        run: |
+          . .venv/bin/activate
+          TARGET=examples/bad \
+          SUPPRESSIONS=examples/suppressions.valid.yaml \
+          SARIF=results.sarif \
+          SOFT_FAIL=true \
+          bash scripts/scan.sh
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,7 @@
+suppressions:
+  - id: CKV_AWS_18
+    paths:
+      - examples/good
+    justification: "access logging is delivered centrally by the platform CloudTrail trail"
+    owner: platform-security
+    expires: "2027-01-31"
