@@ -12,8 +12,7 @@ permissions:
 
 jobs:
   unit:
-    # Self-hosted ARC runner: runs-on == the gha-runner-scale-set release name.
-    runs-on: tfsec-baseline
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
@@ -32,7 +31,7 @@ jobs:
           pytest -q
 
   scan:
-    runs-on: tfsec-baseline
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Python
