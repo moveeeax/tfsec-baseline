@@ -1,4 +1,4 @@
 # Runtime + test dependencies for the tfsec-baseline tooling.
 checkov==3.4.3
-PyYAML>=5.4
+PyYAML>=6.0.3
 pytest>=7.0
