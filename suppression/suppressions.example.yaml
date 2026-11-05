@@ -14,11 +14,11 @@ suppressions:
       - examples/good
     justification: "S3 access logging is delivered centrally via the org CloudTrail data-events trail"
     owner: platform-security
-    expires: "2027-01-31"
+    expires: "2028-12-31"
 
   - id: CKV_AWS_144
     paths:
       - examples/good
     justification: "cross-region replication is out of scope for this single-region internal bucket"
     owner: platform-security
-    expires: "2027-01-31"
+    expires: "2028-12-31"

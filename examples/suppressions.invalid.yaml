@@ -13,4 +13,4 @@ suppressions:
       - examples/bad
     justification: "wip"
     owner: ""
-    expires: "2027-01-01"
+    expires: "2028-12-31"

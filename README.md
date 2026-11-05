@@ -1,8 +1,8 @@
 # tfsec-baseline
 
 [![ci](https://github.com/moveeeax/tfsec-baseline/actions/workflows/ci.yml/badge.svg)](https://github.com/moveeeax/tfsec-baseline/actions/workflows/ci.yml)
-![python](https://img.shields.io/badge/python-3.9%2B-blue)
-![checkov](https://img.shields.io/badge/checkov-3.3.12-informational)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+![checkov](https://img.shields.io/badge/checkov-3.4.3-informational)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 An opinionated Terraform security baseline for [checkov](https://www.checkov.io/) —
@@ -45,7 +45,7 @@ suppressions:
     paths: [examples/good]
     justification: "access logging is delivered centrally by the platform CloudTrail trail"
     owner: platform-security
-    expires: "2027-01-31"
+    expires: "2028-12-31"
 ```
 
 ## Usage
@@ -53,7 +53,7 @@ suppressions:
 As a GitHub Action:
 
 ```yaml
-- uses: moveeeax/tfsec-baseline@v1
+- uses: moveeeax/tfsec-baseline@v0
   with:
     directory: infra/
     suppressions: .tfsec-baseline/suppressions.yaml
