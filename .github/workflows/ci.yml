@@ -8,59 +8,58 @@ on:
 
 permissions:
   contents: read
-  security-events: write
+
+env:
+  CHECKOV_VERSION: "3.4.3"
+  # Fixed audit date so the example waivers (expires 2028-12-31) never turn this
+  # pipeline red on a calendar date. Expiry logic itself is covered by pytest.
+  TODAY: "2026-11-05"
 
 jobs:
   unit:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3 python3-venv python3-pip
-      - name: Create venv
-        run: |
-          python3 -m venv .venv
-          . .venv/bin/activate
-          pip install --quiet pyyaml pytest
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: python -m pip install --quiet pyyaml pytest
       - name: Unit tests
-        run: |
-          . .venv/bin/activate
-          pytest -q
+        run: pytest -q
 
   scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends python3 python3-venv python3-pip
-      - name: Create venv
-        run: |
-          python3 -m venv .venv
-          . .venv/bin/activate
-          pip install --quiet "checkov==3.3.12" pyyaml
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          # Same interpreter the composite action uses.
+          python-version: "3.11"
+      - name: Install scanners
+        run: python -m pip install --quiet "checkov==${CHECKOV_VERSION}" pyyaml
       - name: Scan clean sample (must pass clean)
         run: |
-          . .venv/bin/activate
           TARGET=examples/good \
           SUPPRESSIONS=examples/suppressions.valid.yaml \
           SARIF=good.sarif \
           bash scripts/scan.sh
       - name: Scan insecure sample (findings expected)
         run: |
-          . .venv/bin/activate
           TARGET=examples/bad \
           SUPPRESSIONS=examples/suppressions.valid.yaml \
           SARIF=results.sarif \
           SOFT_FAIL=true \
           bash scripts/scan.sh
       - name: Upload SARIF to code scanning
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         continue-on-error: true
         with:
