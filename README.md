@@ -26,11 +26,15 @@ expiry date so suppressions can't quietly rot.
   a `justification`, an `owner` and an `expires` date. `suppression-audit` fails CI when
   a waiver is malformed or past its expiry, and emits the live waivers as the checkov
   `--skip-check` list. One source of truth, no drift.
+- **No inline bypass** — the audit also greps the scanned Terraform for inline skip
+  comments (`#checkov:skip=`, `#tfsec:ignore:`, `#trivy:ignore:`) and fails on any
+  that the waiver file doesn't back.
 - **SARIF output** — uploads to GitHub code scanning.
 
 ## How it works
 
-`scripts/scan.sh` is the entrypoint. It (1) audits the suppressions file, (2) merges the
+`scripts/scan.sh` is the entrypoint. It (1) audits the suppressions file and the inline
+skip comments in the target, (2) merges the
 baseline skip-list with the active, non-expired waivers, and (3) runs checkov with the
 custom rules, writing both CLI and SARIF output.
 
@@ -58,6 +62,7 @@ As a GitHub Action:
     directory: infra/
     suppressions: .tfsec-baseline/suppressions.yaml
     sarif-file: results.sarif
+    inline: error        # unwaived inline skip comments: error | warn | off
 ```
 
 Locally:
@@ -82,6 +87,37 @@ suppression-audit: 0 active waiver(s), 3 error(s), 0 warning(s)
   ERROR row 2 [CKV_AWS_21]: 'justification' must explain the risk (>= 15 chars)
   ERROR row 2 [CKV_AWS_21]: 'owner' is required so a waiver has a name attached
 ```
+
+### Inline skip comments
+
+A comment such as `#checkov:skip=CKV_AWS_18` silences the scanner without going through
+the waiver file. `--scan-inline <dir>` walks every `.tf` file under `dir` (skipping
+`.terraform/` and `.git/`) and looks for these directives inside `#` and `//` comments:
+
+| Directive | Scanner |
+| --- | --- |
+| `checkov:skip=<id>` | checkov |
+| `bridgecrew:skip=<id>` | checkov (older alias) |
+| `tfsec:ignore:<id>` | tfsec |
+| `trivy:ignore:<id>` | trivy |
+
+Each one is an error unless an active waiver row has the same check id and lists a path
+that is the file or a directory containing it (paths resolve against the working
+directory). An expired or malformed waiver covers nothing. The inline comment can stay
+once the row exists; the row is what carries the owner and the expiry.
+
+```console
+$ python3 tools/suppression_audit.py --file examples/suppressions.valid.yaml --scan-inline infra/
+suppression-audit: 1 active waiver(s), 1 error(s), 0 warning(s)
+suppression-audit: 1 inline skip(s), 0 covered by a waiver
+  ERROR infra/main.tf:2 [CKV_AWS_20]: inline `checkov:skip=CKV_AWS_20` has no matching waiver — move it to the suppressions file
+```
+
+`--inline warn` reports them without failing, and `--inline off` skips the scan. In the
+action and `scripts/scan.sh` the scan always runs on the scanned directory, controlled by
+the `inline` input (`INLINE` env), default `error`; it runs even when there is no
+suppressions file. Trivy ids (`AVD-AWS-0089`) are accepted as waiver ids so trivy skips
+can be waived too.
 
 ## Repository layout
 
