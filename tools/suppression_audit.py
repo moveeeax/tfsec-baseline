@@ -10,12 +10,18 @@ that file, validates it, and fails CI when a waiver is malformed or stale.
 It can also emit the non-expired waivers as a checkov `--skip-check` list, so
 the same file that documents *why* a check is skipped is also what drives the
 scanner. One source of truth, no drift.
+
+With `--scan-inline <dir>` it also greps the Terraform for inline skip comments
+(`#checkov:skip=`, `#tfsec:ignore:`, `#trivy:ignore:`) and flags every one that
+has no matching waiver row, so the file can't be bypassed with a comment.
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import json
+import os
+import re
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -28,7 +34,16 @@ except ImportError:  # pragma: no cover - dependency is declared in requirements
 
 # A justification shorter than this is treated as a non-answer ("wip", "n/a").
 MIN_JUSTIFICATION_LEN = 15
-CHECK_ID_PREFIXES = ("CKV", "CKV2", "AWS", "GCP", "AZU", "aws-", "google-", "azure-")
+CHECK_ID_PREFIXES = ("CKV", "CKV2", "AWS", "GCP", "AZU", "AVD-", "aws-", "google-", "azure-")
+
+# Inline skip directives the scanners honour inside a `#` or `//` comment.
+# `bridgecrew:skip=` is checkov's older alias for `checkov:skip=`.
+INLINE_DIRECTIVE_RE = re.compile(
+    r"(checkov:skip=|bridgecrew:skip=|tfsec:ignore:|trivy:ignore:)\s*([A-Za-z0-9_\-]+)"
+)
+INLINE_LEVELS = ("error", "warn", "off")
+# Directories never worth walking for inline skips.
+SKIP_DIRS = {".terraform", ".git"}
 
 
 @dataclass
@@ -54,12 +69,25 @@ class Problem:
     check_id: str
     level: str  # "error" or "warning"
     message: str
+    # Set for inline-skip problems: the .tf file and 1-based line of the comment.
+    path: str | None = None
+    line: int | None = None
+
+
+@dataclass
+class InlineSkip:
+    path: str
+    line: int
+    directive: str  # e.g. "checkov:skip="
+    check_id: str
 
 
 @dataclass
 class AuditResult:
     problems: list[Problem] = field(default_factory=list)
     active: list[Suppression] = field(default_factory=list)
+    inline: list[InlineSkip] = field(default_factory=list)
+    inline_scanned: bool = False
 
     @property
     def errors(self) -> list[Problem]:
@@ -166,6 +194,76 @@ def validate(suppressions: list[Suppression], today: dt.date, warn_days: int = 3
     return result
 
 
+def _comment(line: str) -> str | None:
+    """Return the `#` or `//` comment part of an HCL line, if any."""
+    starts = [i for i in (line.find("#"), line.find("//")) if i >= 0]
+    return line[min(starts):] if starts else None
+
+
+def find_inline_skips(root: str) -> list[InlineSkip]:
+    """Walk ``root`` (a directory or one .tf file) for inline skip comments."""
+    if os.path.isfile(root):
+        files = [root]
+    else:
+        files = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            files.extend(os.path.join(dirpath, f) for f in sorted(filenames) if f.endswith(".tf"))
+
+    found: list[InlineSkip] = []
+    for path in files:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for lineno, text in enumerate(fh, start=1):
+                comment = _comment(text)
+                if comment is None:
+                    continue
+                for m in INLINE_DIRECTIVE_RE.finditer(comment):
+                    found.append(InlineSkip(os.path.normpath(path), lineno, m.group(1), m.group(2)))
+    return found
+
+
+def _norm(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _covers(waiver_path: str, file_path: str) -> bool:
+    """True when the waiver path is the file itself or a directory above it."""
+    w, f = _norm(waiver_path), _norm(file_path)
+    return f == w or f.startswith(w.rstrip(os.sep) + os.sep)
+
+
+def audit_inline(result: AuditResult, skips: list[InlineSkip], level: str) -> None:
+    """Flag every inline skip that no active waiver covers.
+
+    A skip is covered when an active (valid, unexpired) waiver has the same
+    check id and lists a path that is the file or a directory containing it.
+    Paths are compared after resolving both against the working directory.
+    """
+    result.inline_scanned = True
+    result.inline = skips
+    if level == "off":
+        return
+    problem_level = "error" if level == "error" else "warning"
+    for skip in skips:
+        covered = any(
+            s.check_id == skip.check_id and any(_covers(p, skip.path) for p in s.paths)
+            for s in result.active
+        )
+        if covered:
+            continue
+        result.problems.append(
+            Problem(
+                -1,
+                skip.check_id,
+                problem_level,
+                f"inline `{skip.directive}{skip.check_id}` has no matching waiver "
+                "— move it to the suppressions file",
+                path=skip.path,
+                line=skip.line,
+            )
+        )
+
+
 def load_file(path: str) -> list[Suppression]:
     with open(path, "r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
@@ -177,7 +275,7 @@ def to_sarif(result: AuditResult, source: str) -> dict:
     rules: list[dict] = []
     results: list[dict] = []
     for p in result.problems:
-        rule_id = f"suppression-audit/{p.level}"
+        rule_id = "suppression-audit/inline-skip" if p.path else f"suppression-audit/{p.level}"
         if rule_id not in rules_seen:
             rules_seen[rule_id] = len(rules)
             rules.append({"id": rule_id, "name": rule_id, "shortDescription": {"text": rule_id}})
@@ -190,8 +288,8 @@ def to_sarif(result: AuditResult, source: str) -> dict:
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": source},
-                            "region": {"startLine": p.index + 1},
+                            "artifactLocation": {"uri": p.path or source},
+                            "region": {"startLine": p.line if p.path else p.index + 1},
                         }
                     }
                 ],
@@ -219,11 +317,18 @@ def format_text(result: AuditResult) -> str:
     lines: list[str] = []
     for p in result.problems:
         marker = "ERROR" if p.level == "error" else "warn "
-        lines.append(f"  {marker} row {p.index + 1} [{p.check_id}]: {p.message}")
+        where = f"{p.path}:{p.line}" if p.path else f"row {p.index + 1}"
+        lines.append(f"  {marker} {where} [{p.check_id}]: {p.message}")
     header = (
         f"suppression-audit: {len(result.active)} active waiver(s), "
         f"{len(result.errors)} error(s), {len(result.warnings)} warning(s)"
     )
+    if result.inline_scanned:
+        uncovered = sum(1 for p in result.problems if p.path)
+        header += (
+            f"\nsuppression-audit: {len(result.inline)} inline skip(s), "
+            f"{len(result.inline) - uncovered} covered by a waiver"
+        )
     lines.insert(0, header)
     if result.ok:
         lines.append("OK: all waivers are justified, owned and unexpired.")
@@ -261,6 +366,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format (default: %(default)s)",
     )
     parser.add_argument(
+        "--scan-inline", metavar="DIR", default=None,
+        help="also flag inline skip comments in DIR's .tf files that have no matching waiver",
+    )
+    parser.add_argument(
+        "--inline", choices=INLINE_LEVELS, default="error",
+        help="severity of an unwaived inline skip with --scan-inline (default: %(default)s)",
+    )
+    parser.add_argument(
         "--emit-checkov-skips", action="store_true",
         help="print the active check ids as a checkov --skip-check list and exit 0",
     )
@@ -293,6 +406,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit_checkov_skips:
         print(emit_checkov_skips(result))
         return 0
+
+    if args.scan_inline and args.inline != "off":
+        if not os.path.exists(args.scan_inline):
+            sys.stderr.write(f"suppression-audit: no such directory: {args.scan_inline}\n")
+            return 2
+        audit_inline(result, find_inline_skips(args.scan_inline), args.inline)
 
     if args.format == "sarif":
         print(json.dumps(to_sarif(result, args.file), indent=2))

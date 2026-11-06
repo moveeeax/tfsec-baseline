@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tfsec-baseline scan runner.
 #
-# 1. Audits the accountable suppressions file (fails on expired / unjustified waivers).
+# 1. Audits the accountable suppressions file (fails on expired / unjustified waivers)
+#    and the inline skip comments in TARGET (fails on any without a matching waiver).
 # 2. Merges the curated baseline skip-list with the active, audited waivers.
 # 3. Runs checkov with the custom rules and writes SARIF for code scanning.
 #
@@ -10,6 +11,7 @@
 #   SUPPRESSIONS  suppressions YAML            (default: .tfsec-baseline/suppressions.yaml)
 #   SARIF         SARIF output path            (default: results.sarif)
 #   SOFT_FAIL     "true" -> always exit 0      (default: false)
+#   INLINE        unwaived inline skips: error|warn|off  (default: error)
 #   TODAY         override date for the audit  (default: real today)
 set -euo pipefail
 
@@ -18,6 +20,7 @@ TARGET="${TARGET:-${1:-.}}"
 SUPPRESSIONS="${SUPPRESSIONS:-.tfsec-baseline/suppressions.yaml}"
 SARIF="${SARIF:-results.sarif}"
 SOFT_FAIL="${SOFT_FAIL:-false}"
+INLINE="${INLINE:-error}"
 CONFIG="${CONFIG:-$HERE/baseline/checkov.yaml}"
 CHECKS_DIR="$HERE/baseline/checks"
 
@@ -39,10 +42,17 @@ waiver_skips=""
 if [ -f "$SUPPRESSIONS" ]; then
   echo ">> auditing suppressions: $SUPPRESSIONS"
   # A broken/expired waiver is a hard failure — do not let a stale skip through.
-  python3 "$HERE/tools/suppression_audit.py" "${audit_args[@]}"
+  python3 "$HERE/tools/suppression_audit.py" "${audit_args[@]}" \
+    --scan-inline "$TARGET" --inline "$INLINE"
   waiver_skips="$(python3 "$HERE/tools/suppression_audit.py" "${audit_args[@]}" --emit-checkov-skips)"
 else
   echo ">> no suppressions file at $SUPPRESSIONS (nothing to waive)"
+  if [ "$INLINE" != "off" ]; then
+    # No waiver file means no inline skip can be covered; still report them.
+    echo ">> auditing inline skips in: $TARGET"
+    python3 "$HERE/tools/suppression_audit.py" --file /dev/null \
+      --scan-inline "$TARGET" --inline "$INLINE"
+  fi
 fi
 
 skips="$baseline_skips"

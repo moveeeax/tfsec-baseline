@@ -21,6 +21,10 @@ inputs:
     description: "If 'true', report findings but do not fail the job."
     required: false
     default: "false"
+  inline:
+    description: "How to treat inline skip comments (#checkov:skip=, #tfsec:ignore:, #trivy:ignore:) without a matching waiver: error, warn or off."
+    required: false
+    default: "error"
   checkov-version:
     description: "Pinned checkov version to install."
     required: false
@@ -48,4 +52,5 @@ runs:
         SUPPRESSIONS: ${{ inputs.suppressions }}
         SARIF: ${{ inputs.sarif-file }}
         SOFT_FAIL: ${{ inputs.soft-fail }}
+        INLINE: ${{ inputs.inline }}
       run: "${{ github.action_path }}/scripts/scan.sh"
